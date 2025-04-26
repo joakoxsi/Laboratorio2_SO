@@ -1,0 +1,99 @@
+
+
+Clase Carta:
+    valor  // Valor numérico de la carta (1-11) o 10 para figuras
+    is_as  // Booleano: true si es un As, false si no
+
+Clase Mazo:
+    cartas: Lista de Carta
+
+Clase Jugador:
+    nombre
+    puntos
+    mazo: Lista de Carta
+
+Funciones:
+
+// Ajusta el valor del As según convenga
+Funcion ajustar_as(carta, mazo_jugador):
+    si carta.is_as:
+        suma = suma_cartas(mazo_jugador sin contar As)
+        si suma + 11 <= 21:
+            carta.valor = 11
+        sino:
+            carta.valor = 1
+
+// Suma el total de cartas en la mano de un jugador
+Funcion suma_cartas(lista_cartas):
+    suma = 0
+    para cada carta en lista_cartas:
+        suma = suma + carta.valor
+    retornar suma
+
+// Evalúa si el jugador está en juego o se pasó
+Funcion estado(jugador):
+    si suma_cartas(jugador.mazo) <= 21:
+        retornar true
+    sino:
+        retornar false
+
+// Inicializa un nuevo juego
+Funcion inicio(todos):
+    crear mazo con 52 cartas (sin jokers)
+    barajar el mazo
+    para cada jugador en todos:
+        repartir 2 cartas
+        ajustar_as si corresponde
+    al crupier:
+        repartir 2 cartas (mostrar solo 1)
+
+// Termina una ronda
+Funcion fin_ronda(todos):
+    comparar resultados entre cada jugador y el crupier
+    otorgar puntos
+    limpiar mazos de todos los jugadores
+    limpiar mazo principal
+    ronda = ronda + 1
+
+// Función de decidir si un bot quiere pedir
+Funcion apostar(jugador):
+    total = suma_cartas(jugador.mazo)
+    si total <= 11:
+        retornar true
+    si total entre 12 y 18:
+        retornar random(0,1) == 1  // 50% de pedir
+    si total entre 19 y 21:
+        retornar false
+
+// Entrega una carta al jugador
+Funcion pedir(jugador, mazo):
+    carta = mazo.sacar_primera_carta()
+    ajustar_as(carta, jugador.mazo)
+    agregar carta al mazo del jugador
+
+// El jugador decide plantarse
+Funcion plantarse(jugador):
+    jugador termina su turno
+
+// Flujo Principal
+Inicio:
+    crear jugadores (4 bots + 1 crupier)
+    definir cantidad de rondas
+    repetir para cada ronda:
+        inicio(jugadores)
+        
+        para cada jugador:
+            mientras estado(jugador) es true:
+                si apostar(jugador):
+                    pedir(jugador, mazo)
+                sino:
+                    plantarse(jugador)
+
+        turno del crupier (manejado manualmente)
+            mostrar carta oculta
+            mientras usuario decida:
+                pedir o plantarse
+
+        fin_ronda(jugadores)
+    mostrar resultados finales
+Fin

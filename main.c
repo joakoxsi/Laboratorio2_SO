@@ -29,10 +29,27 @@ void imprimir_mazo(Carta mazo[]) {
     }
 }
 
+void revolver_mazo(Carta mazo[], int total_cartas) {
+    srand(time(NULL)); // Inicializa semilla aleatoria (una sola vez al inicio)
+
+    for (int i = total_cartas - 1; i > 0; i--) {
+        int j = rand() % (i + 1); // Índice aleatorio entre 0 y i
+
+        // Intercambia carta i con carta j
+        Carta temp = mazo[i];
+        mazo[i] = mazo[j];
+        mazo[j] = temp;
+    }
+}
+
+
+
 int main() {
     Carta mazo[TOTAL_CARTAS];
 
     inicializar_mazo(mazo);
+    imprimir_mazo(mazo);
+    revolver_mazo(mazo,TOTAL_CARTAS);
     imprimir_mazo(mazo);
 
     return 0;

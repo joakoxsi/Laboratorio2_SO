@@ -641,4 +641,5 @@ int main(){
     shmctl(shmID, IPC_RMID, NULL);
 
     return 0;
+    //chupalo nicolas 
 }

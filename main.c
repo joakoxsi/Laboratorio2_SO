@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
-
+#include "main.h"
 #define TAM_DECK 52
 
 typedef enum { TREBOL, DIAMANTE, CORAZON, PICA } Palo;
@@ -29,7 +30,6 @@ typedef struct {
     int gano_ronda;      // 1 si gano la ronda, 0 si pierde
 } Crupier;
 
-// Auxiliares para convertir a cadena
 const char *valor_str(Valor v) {
     static const char *names[] =
         { "", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K" };
@@ -137,6 +137,60 @@ int Pedir_bot(Jugador j) {
     }
 }
 
+int Pedir_Hilo(Jugador j ){
+    int suma , conteo, ases = 0;
+
+    for (int i = 0; i < j.num_cartas; i++) {
+        Valor v = j.mano[i].valor;
+        if (v == AS) {
+            ases++;
+            suma += 11;
+            conteo ++;
+        //paso 2: corrige el valor de los J, Q, K a 10
+        } else if (v >= 10 && v <= K) {
+            suma += 10;
+            conteo--;
+        //paso 3: toma el valor de los numeros
+        } else if (v>=2 && v <=9){
+            conteo++;
+            suma += (int)v;
+        } else{
+            suma += (int)v;
+        }
+    }
+
+    while (ases > 0 && suma > 21) {
+        suma -= 10;       //11->1
+        ases--;
+    }
+
+
+    if (suma>=17 && suma<=20 ){
+        return 0;
+    }
+    else if(suma >= 12 && suma<=16){
+        if (abs(conteo)> 4){
+            return 0;
+        }
+        else{
+            double p= 0.5 - abs(conteo)/10.0;
+            double r = (double)rand() / (double)RAND_MAX;
+            if (r < p) {
+                return 1;  // “pedir”
+            } else {
+                return 0;  // “plantarse”
+            }
+        }
+    }
+    else{
+        return 1;
+    }
+
+
+
+
+
+}
 /*
 
 void inicializacion_(Jugador jugadores[], Carta mazo[], int *indice_mazo) {

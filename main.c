@@ -8,6 +8,11 @@
 #define TAM_DECK 52
 #define NUM_JUGADORES 4
 #define CRUPIER -1
+
+#define CMD_TERMINAR 0
+#define CMD_NUEVA_RONDA 1
+#define CMD_FIN_RONDA 2
+
 typedef enum { TREBOL, DIAMANTE, CORAZON, PICA } Palo;
 
 typedef enum { AS = 1, DOS, TRES, CUATRO, CINCO, SEIS,
@@ -72,7 +77,7 @@ void print_crupierInit(Jugador j) {
     printf("Crupier: ");
     //como la primera mano siempre son 2 se imprime la 1ra carta
     print_carta(mano_init[0]);
-    printf("XX");
+    printf(" XX");
     printf("\n");
 
     return;
@@ -81,7 +86,7 @@ void print_crupierInit(Jugador j) {
 void init_deck(Carta mazo[]) {
     int index = 0;
 
-    for (int p = 0; p < 4; p++) {       // 4 pintas
+    for (int p = 0; p < 4; p++) {               // 4 pintas
         for (int v = 1; v <= 13; v++) {         // 13 cartas por pinta
             mazo[index].valor = (Valor)v;       // corregir que J,Q,K valgan 10
             mazo[index].palo = (Palo)p;
@@ -182,106 +187,135 @@ int main() {
     printf("=== Bienvenido a Blackjack SO ===\n");
     printf("¿Cuántas rondas quieres jugar? (mínimo 5): ");
     scanf("%d", &rondas);
-    
+    /*
     if (rondas < 5) {
         printf("Se jugarán 5 rondas por defecto.\n");
         rondas = 5;
-    }
+    }*/
     //================Inicializacion de fork=======================
     int from_child[NUM_JUGADORES][2];   //PIPE para hijo escriba, padre lee
     int to_child[NUM_JUGADORES][2];     //PIPE para padre escriba, hijo lee
     pid_t pids[NUM_JUGADORES];
 
     jugador.id_Jugador = CRUPIER; //Para el proceso padre
+    //========================fork==================================
+    for (int i = 0; i < NUM_JUGADORES; i++) {
+        pipe(to_child[i]);
+        pipe(from_child[i]);
+        pids[i] = fork();
+        if (pids[i] < 0) { perror("fork"); exit(1); }
+        //======================Hijo============================
+        if (pids[i] == 0) {
+            close(to_child[i][1]);      //cierro PIPE para que hijo no escriba
+            close(from_child[i][0]);    //cierro PIPE para que hijo no lea
+            int rd = to_child[i][0];
+            int wr = from_child[i][1];
+            jugador.id_Jugador = i + 1;
+
+            while (1) {
+                int comando;
+                read(rd, &comando, sizeof(int));
+
+                if (comando == CMD_TERMINAR) {
+                    //al terminar comunicar los puntos al Crupier
+                    write(wr, &jugador.puntos, sizeof(jugador.puntos));
+                    close(rd);
+                    close(wr);
+                    exit(0); //cuidado con los procesos zombi
+                } else if (comando == CMD_NUEVA_RONDA) {
+                    //2 cartas iniciales
+                    Carta c;
+                    for (int j = 0; j < 2; j++) {
+                        read(rd, &c, sizeof(c));
+                        jugador.mano[jugador.num_cartas] = c;
+                        jugador.num_cartas++;
+                    } print_jugador(jugador);
+
+                    //pedir más cartas segun estrategia 
+                    int pedir = pedir_carta(jugador);
+                    write(wr, &pedir, sizeof(pedir));
+                    while (pedir) {
+                        read(rd,&c,sizeof(Carta));
+                        jugador.mano[jugador.num_cartas] = c;
+                        jugador.num_cartas++;
+
+                        pedir = pedir_carta(jugador);
+                        write(wr, &pedir, sizeof(pedir));
+                    }
+                } else if (comando == CMD_FIN_RONDA) {
+                    //mandar puntos
+                    //recibir puntaje
+                } 
+            }
+        }
+        //======================Padre===========================
+        close(to_child[i][0]);          //cierro PIPE para que padre no lea
+        close(from_child[i][1]);        //cierro PIPE para que padre no escriba 
+    }
     //=======================Rondas=================================
-    int ronda_actual = 1;
-    while (ronda_actual <= rondas) {
+    for (int ronda_actual = 1; ronda_actual <= rondas; ronda_actual++) {
         printf("\n=== Ronda %d ===\n", ronda_actual);
-        //======================fork===============================
+        barajar_deck(mazo);
+        idx_mazo = 0;
+        //avisa a todos que se empezo una nueva ronda
         for (int i = 0; i < NUM_JUGADORES; i++) {
-            pipe(to_child[i]);
-            pipe(from_child[i]);
-
-            pids[i] = fork();
-
-            if (pids[i] < 0) {
-                perror("fork");
-                exit(1);
-            }
-            //=================Proceso hijo=======================
-            if (pids[i] == 0) {
-                jugador.id_Jugador = i + 1;
-                //cerar PIPES para evitar errores
-                close(to_child[i][1]);    // hijo no escribe al “to_child”
-                close(from_child[i][0]);  // hijo no lee del “from_child”
-                
-                //definimos PIPES
-                int rd = to_child[i][0];        // lee del padre
-                int wr = from_child[i][1];      // escribe al padre
-                
-                printf("=== Repartiendo cartas iniciales ===\n");
-                //se reparten 2 cartas iniciales
-                for (int j = 0; j < 2; j++) {
-                    read(rd, &jugador.mano[jugador.num_cartas], sizeof(Carta));
-                    jugador.num_cartas++;
-                }
-                print_jugador(jugador);
-                /*
-                //esperar que el crupier indique que puede pedir
-                int pedir = pedir_carta(jugador);
-                write(wr, &pedir, sizeof(int)); //manda al padre si puede o no pedir
-
-                //mientras pueda pedir, el bot pide
-                while (pedir) {
-                    read(rd, &jugador.mano[jugador.num_cartas], sizeof(Carta));
-                    jugador.num_cartas++;
-                    pedir = pedir_carta(jugador);
-                    write(wr, &pedir, sizeof(int));
-                }
-                */
-                //se cierran los PIPES por seguridad
-                close(rd);
-                close(wr);
-                exit(0); //termina el hijo
-            }
-            //=================Proceso padre========================
-            //cerar PIPES para evitar errores
-            close(to_child[i][0]);              // padre no lee de “to_child”
-            close(from_child[i][1]);            // padre no escribe en “from_child”  
-           
-            barajar_deck(mazo); //el proceso padre maneja las cartas
-            
-            // Reparte 2 cartas a cada jugador
+            int comando = CMD_NUEVA_RONDA;
+            write(to_child[i][1], &comando, sizeof(comando));
+        }
+        //repartir 2 cartas iniciales
+        for (int i = 0; i < NUM_JUGADORES; i++) {
             for (int j = 0; j < 2; j++) {
-                Carta carta = dar_carta(mazo, &idx_mazo);
-                write(to_child[i][1], &carta, sizeof(Carta));
+                Carta c = dar_carta(mazo, &idx_mazo);
+                write(to_child[i][1], &c, sizeof(c));
             }
-            // Repartir 2 cartas al crupier --> a si mismo
-            jugador.mano[jugador.num_cartas] = dar_carta(mazo, &idx_mazo);
-            jugador.num_cartas++;
-            jugador.mano[jugador.num_cartas] = dar_carta(mazo, &idx_mazo);
-            jugador.num_cartas++;
-            print_crupierInit(jugador);
-            
-            //el padre debe decir al hijo que ya puede pedir
-            /*
-
-
-            //el padre debe saber que el bot pide
-            int bot_pide;
-            read(from_child[i][0], &bot_pide, sizeof(int));
-
-            while (bot_pide) {
-                Carta carta = dar_carta(mazo, &idx_mazo); 
-                write(to_child[i][1], &carta, sizeof(Carta));
-                read(from_child[i][0], &bot_pide, sizeof(int));
+        }
+        // Repartir 2 cartas al crupier --> a si mismo
+        for (int j = 0; j < 2; j++) {
+            Carta c = dar_carta(mazo, &idx_mazo);
+            jugador.mano[jugador.num_cartas++] = c;
+        }
+        print_crupierInit(jugador);
+        // Repartir cartas si piden
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            int pide;
+            read(from_child[i][0], &pide, sizeof(pide));
+            while (pide) {
+                Carta c = dar_carta(mazo, &idx_mazo);
+                write(to_child[i][1], &c, sizeof(c));
+                read(from_child[i][0], &pide, sizeof(pide));
             }
-            */
-           jugador.num_cartas = 0; // se termina la ronda
-           close(from_child[i][0]);
-           close(to_child[i][1]);
-       }
+        }
+        //Turno del Crupier
+        int opcion = 0;
+        printf("=== Tu turno! ===\n");
+        //imprimir ambas cartas
+        printf("¿Qué quieres hacer?\n");
+        printf("(1) Agregar carta            (2) Plantarse\n");
+        printf("Escoge una opción: ");
+        scanf("%d", &opcion);
         /*
+        while (opcion != 2) {
+            //dar carta
+        }*/
+        
+    }
+    //====================Termino del juego===============================
+    for (int i = 0; i < NUM_JUGADORES; i++) {
+        int comando = CMD_TERMINAR;
+        write(to_child[i][1], &comando, sizeof(comando));
+        //recibe puntos de bots i
+        //decide quien gano
+        close(to_child[i][1]);
+        close(from_child[i][0]);
+    }
+    for (int i = 0; i < NUM_JUGADORES; i++) {
+        waitpid(pids[i], NULL, 0);
+    }
+    
+    return 0;
+}
+
+/*
         entregar cartas a bots y crupier
         mostrar cartas de bots
         mostrar 1 carta de crupier y la otra boca abajo (XX)
@@ -297,14 +331,4 @@ int main() {
         si plantarse -> dar puntos a bots, 
                      -> contar derrotas
                      -> dar puntos a crupier (1 si 51% derrotas, 2 si 100% derrotas, 0 etoc)
-        */
-        //matar a los procesos zombis
-        for (int i = 0; i < NUM_JUGADORES; i++) {
-            waitpid(pids[i], NULL, 0);
-        }
-        idx_mazo = 0; //apunta a todo el monton para la siguiente ronda
-        ronda_actual++;
-    }
-    
-    return 0;
-}
+*/

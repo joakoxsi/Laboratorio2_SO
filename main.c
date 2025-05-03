@@ -1,10 +1,12 @@
 #include <stdio.h>
-#include <sys/types.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 
 #define TAM_DECK 52
-#define NUM_JUGADORES 5
+#define NUM_JUGADORES 4
 #define CRUPIER -1
 typedef enum { TREBOL, DIAMANTE, CORAZON, PICA } Palo;
 
@@ -32,23 +34,57 @@ const char *valor_str(Valor v) {
     return names[v];
 }
 
-const char palo_str(Palo p) {
+const char *palo_str(Palo p) {
     static const char *names[] =
         { "♣", "♦", "♥", "♠" };
     return names[p];
 }
 
-void print_carta(const Carta *c) {
-    printf("%2s%s", valor_str(c->valor), palo_str(c->palo));
+void print_carta(Carta c) {
+    printf("%2s%s", valor_str(c.valor), palo_str(c.palo));
+}
+
+void print_mano(Jugador j) {
+    Carta* mano = j.mano;
+    int cant_mano = j.num_cartas;
+
+    for (int i = 0; i < cant_mano; i++) {
+        print_carta(mano[i]);
+    }
+}
+
+void print_jugador(Jugador j) {
+    if (j.id_Jugador == CRUPIER) {
+        printf("Crupier: ");
+        print_mano(j);
+        printf("\n");
+    } else {
+        printf("Bot %d: ", j.id_Jugador);
+        print_mano(j);
+        printf("\n");
+    }
+    return;
+}
+
+void print_crupierInit(Jugador j) {
+    Carta* mano_init = j.mano;
+
+    printf("Crupier: ");
+    //como la primera mano siempre son 2 se imprime la 1ra carta
+    print_carta(mano_init[0]);
+    printf("XX");
+    printf("\n");
+
+    return;
 }
 
 void init_deck(Carta mazo[]) {
     int index = 0;
 
-    for (Palo p = TREBOL; p < PICA; p++) {      // 4 pintas
-        for (Valor v = AS; v <= K; v++) {       // 13 cartas por pinta
-            mazo[index].valor = v;              // corregir que J,Q,K valgan 10
-            mazo[index].palo = p;
+    for (int p = 0; p < 4; p++) {       // 4 pintas
+        for (int v = 1; v <= 13; v++) {         // 13 cartas por pinta
+            mazo[index].valor = (Valor)v;       // corregir que J,Q,K valgan 10
+            mazo[index].palo = (Palo)p;
             index++;
         }
     }
@@ -57,7 +93,7 @@ void init_deck(Carta mazo[]) {
 //para pruebas
 void print_deck(const Carta mazo[], int n) {
     for (int i = 0; i < n; i++) {
-        print_carta(&mazo[i]);
+        print_carta(mazo[i]);
         if ((i + 1) % 13 == 0)
             printf("\n");
         else
@@ -68,7 +104,7 @@ void print_deck(const Carta mazo[], int n) {
 }
 
 void barajar_deck(Carta mazo[]) {
-    for (int i =  - 1; i > 0; i--) {
+    for (int i =  TAM_DECK - 1; i > 0; i--) {
         int j = rand() % (i + 1);               // Índice aleatorio entre 0 y i
         // Intercambia carta i con carta j
         Carta tmp = mazo[i];
@@ -78,11 +114,6 @@ void barajar_deck(Carta mazo[]) {
 }
 
 Carta dar_carta(Carta mazo[], int *indice_mazo) {
-    if (*indice_mazo >= TAM_DECK) {
-        printf("No quedan más cartas en el mazo.\n");
-        return;
-    }
-
     Carta carta = mazo[(*indice_mazo)];
     
     // Avanzar el índice del mazo
@@ -119,7 +150,7 @@ int valor_mano(Jugador j) { //revisar puede que sea Jugador* j
 }
 
 //devuelve un bool si el bot debe pedir
-int Pedir_bot(Jugador j) {
+int pedir_carta(Jugador j) {
     int total = valor_mano(j); 
 
     if (total <= 11) {
@@ -131,44 +162,12 @@ int Pedir_bot(Jugador j) {
     }
 }
 
-/*
-
-void inicializacion_(Jugador jugadores[], Carta mazo[], int *indice_mazo) {
-    printf("=== Repartiendo cartas ===\n");
-
-    // Repartir 2 cartas a cada jugador
-    for (int i = 0; i < NUM_JUGADORES; i++) {
-        dar_carta_desde_mazo(&jugadores[i], mazo, indice_mazo);
-        dar_carta_desde_mazo(&jugadores[i], mazo, indice_mazo);
-    }
-    
-    printf("\n=== Estado inicial de cada jugador ===\n");
-    for (int i = 0; i < NUM_JUGADORES; i++) {
-        if (jugadores[i].is_crupier) {
-            // Mostrar solo la primera carta del crupier
-            printf("Crupier muestra su primera carta:\n");
-            Carta c = jugadores[i].mano[0];
-            printf("  Carta visible (ID %d): Valor = %d, Pinta = %c\n", c.id, c.valor, c.pinta);
-        } else {
-            mostrar_mano(jugadores[i]);
-        }
-        printf("\n");
-    }
-}
-*/
-
 int main() {
     srand(time(NULL));   // Inicializa semilla aleatoria (una sola vez al inicio)
     
     Jugador jugador;
     
     // Inicializar jugadores
-    jugador.num_cartas = 0;
-    jugador.puntos = 0;
-    jugador.gano_ronda = 0;
-    
-    
-    // Incializar crupier
     jugador.num_cartas = 0;
     jugador.puntos = 0;
     jugador.gano_ronda = 0;
@@ -190,15 +189,19 @@ int main() {
     }
     //================Inicializacion de fork=======================
     int from_child[NUM_JUGADORES][2];   //PIPE para hijo escriba, padre lee
-    int to_child[NUM_JUGADORES][2];     //PIPE para  padre escriba, hijo lee
+    int to_child[NUM_JUGADORES][2];     //PIPE para padre escriba, hijo lee
     pid_t pids[NUM_JUGADORES];
 
     jugador.id_Jugador = CRUPIER; //Para el proceso padre
     //=======================Rondas=================================
     int ronda_actual = 1;
     while (ronda_actual <= rondas) {
+        printf("\n=== Ronda %d ===\n", ronda_actual);
         //======================fork===============================
-        for (int i = 1; i <= NUM_JUGADORES; i++) {
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            pipe(to_child[i]);
+            pipe(from_child[i]);
+
             pids[i] = fork();
 
             if (pids[i] < 0) {
@@ -207,7 +210,7 @@ int main() {
             }
             //=================Proceso hijo=======================
             if (pids[i] == 0) {
-                jugador.id_Jugador = i;
+                jugador.id_Jugador = i + 1;
                 //cerar PIPES para evitar errores
                 close(to_child[i][1]);    // hijo no escribe al “to_child”
                 close(from_child[i][0]);  // hijo no lee del “from_child”
@@ -216,12 +219,26 @@ int main() {
                 int rd = to_child[i][0];        // lee del padre
                 int wr = from_child[i][1];      // escribe al padre
                 
+                printf("=== Repartiendo cartas iniciales ===\n");
                 //se reparten 2 cartas iniciales
                 for (int j = 0; j < 2; j++) {
                     read(rd, &jugador.mano[jugador.num_cartas], sizeof(Carta));
                     jugador.num_cartas++;
                 }
+                print_jugador(jugador);
+                /*
+                //esperar que el crupier indique que puede pedir
+                int pedir = pedir_carta(jugador);
+                write(wr, &pedir, sizeof(int)); //manda al padre si puede o no pedir
 
+                //mientras pueda pedir, el bot pide
+                while (pedir) {
+                    read(rd, &jugador.mano[jugador.num_cartas], sizeof(Carta));
+                    jugador.num_cartas++;
+                    pedir = pedir_carta(jugador);
+                    write(wr, &pedir, sizeof(int));
+                }
+                */
                 //se cierran los PIPES por seguridad
                 close(rd);
                 close(wr);
@@ -231,18 +248,38 @@ int main() {
             //cerar PIPES para evitar errores
             close(to_child[i][0]);              // padre no lee de “to_child”
             close(from_child[i][1]);            // padre no escribe en “from_child”  
-
-            //definimos PIPES
-            int rd_padre = from_child[i][0];          // lee del hijo
-            int wr_padre = to_child[i][1];            // escribe al hijo
-            
+           
             barajar_deck(mazo); //el proceso padre maneja las cartas
             
-            // Padre reparte dos cartas al jugador i
+            // Reparte 2 cartas a cada jugador
             for (int j = 0; j < 2; j++) {
-                Carta carta = dar_carta(mazo, idx_mazo);  // generar carta desde el mazo
-                write(wr_padre, &carta, sizeof(Carta));
+                Carta carta = dar_carta(mazo, &idx_mazo);
+                write(to_child[i][1], &carta, sizeof(Carta));
             }
+            // Repartir 2 cartas al crupier --> a si mismo
+            jugador.mano[jugador.num_cartas] = dar_carta(mazo, &idx_mazo);
+            jugador.num_cartas++;
+            jugador.mano[jugador.num_cartas] = dar_carta(mazo, &idx_mazo);
+            jugador.num_cartas++;
+            print_crupierInit(jugador);
+            
+            //el padre debe decir al hijo que ya puede pedir
+            /*
+
+
+            //el padre debe saber que el bot pide
+            int bot_pide;
+            read(from_child[i][0], &bot_pide, sizeof(int));
+
+            while (bot_pide) {
+                Carta carta = dar_carta(mazo, &idx_mazo); 
+                write(to_child[i][1], &carta, sizeof(Carta));
+                read(from_child[i][0], &bot_pide, sizeof(int));
+            }
+            */
+           jugador.num_cartas = 0; // se termina la ronda
+           close(from_child[i][0]);
+           close(to_child[i][1]);
        }
         /*
         entregar cartas a bots y crupier
@@ -261,7 +298,12 @@ int main() {
                      -> contar derrotas
                      -> dar puntos a crupier (1 si 51% derrotas, 2 si 100% derrotas, 0 etoc)
         */
-        rondas++;
+        //matar a los procesos zombis
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            waitpid(pids[i], NULL, 0);
+        }
+        idx_mazo = 0; //apunta a todo el monton para la siguiente ronda
+        ronda_actual++;
     }
     
     return 0;

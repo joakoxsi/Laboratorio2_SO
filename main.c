@@ -4,10 +4,9 @@
 #include <time.h>
 
 #define TAM_DECK 52
-#define NUM_JUGADORES 5  // 4 bots + 1 crupier
-#define CRUPIER 4       //Crupier sera siempre el ultimo en el arreglo
 
 typedef enum { TREBOL, DIAMANTE, CORAZON, PICA } Palo;
+
 typedef enum { AS = 1, DOS, TRES, CUATRO, CINCO, SEIS,
                SIETE, OCHO, NUEVE, DIEZ, J, Q, K } Valor;
 
@@ -17,13 +16,18 @@ typedef struct {
 } Carta;
 
 typedef struct {
-    char nombre[8];      // Nombre del jugador: Bot %d || Crupier
-    int puntos;          // Puntos acumulados
-    int is_crupier;      // 1 si es crupier, 0 si es jugador normal
     Carta mano[12];      // Mano de cartas
     int num_cartas;      // Número de cartas en la mano
+    int puntos;          // Puntos acumulados
     int gano_ronda;      // 1 si gano la ronda, 0 si pierde
 } Jugador;
+
+typedef struct {
+    Carta mano[12];      // Mano de cartas
+    int num_cartas;      // Número de cartas en la mano
+    int puntos;          // Puntos acumulados
+    int gano_ronda;      // 1 si gano la ronda, 0 si pierde
+} Crupier;
 
 // Auxiliares para convertir a cadena
 const char *valor_str(Valor v) {
@@ -162,27 +166,20 @@ void inicializacion_(Jugador jugadores[], Carta mazo[], int *indice_mazo) {
 int main() {
     srand(time(NULL));   // Inicializa semilla aleatoria (una sola vez al inicio)
     
-    Jugador jugadores[NUM_JUGADORES];
+    Jugador jugador;
     Carta mazo[TAM_DECK];
     int indice_mazo = 0;
     
     // Inicializar jugadores
-    for (int i = 0; i < NUM_JUGADORES - 1; i++) {
-        char nombre[5];
-        sprintf(nombre, "Bot %d", i + 1);
-        strcpy(jugadores[i].nombre, nombre);
-        jugadores[i].puntos = 0;
-        jugadores[i].is_crupier = 0;
-        jugadores[i].num_cartas = 0;
-        jugadores[i].gano_ronda = 0;
-    }
+    jugador.num_cartas = 0;
+    jugador.puntos = 0;
+    jugador.gano_ronda = 0;
+    
     
     // Incializar crupier
-    strcpy(jugadores[CRUPIER].nombre, "Crupier");
-    jugadores[CRUPIER].puntos = 0;
-    jugadores[CRUPIER].is_crupier = 1;
-    jugadores[CRUPIER].num_cartas = 0;
-    jugadores[CRUPIER].gano_ronda = 0;
+    jugador.num_cartas = 0;
+    jugador.puntos = 0;
+    jugador.gano_ronda = 0;
     
     //=================Definicion de rondas======================
     int rondas;

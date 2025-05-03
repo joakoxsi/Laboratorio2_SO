@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/shm.h>
 #include <sys/sem.h>
@@ -36,7 +37,7 @@ typedef struct {
     int idx_mazo;
     Jugador jugadores[NUM_JUGADORES];
     int comando[NUM_JUGADORES]; // el padre escribe comandos, hijos los lee
-} MemoriaCompartida;
+} MemCompartida;
 
 // Auxiliares para convertir a cadena
 const char *valor_str(Valor v) {
@@ -174,7 +175,14 @@ int pedir_carta(Jugador j) {
 }
 
 int main() {
-    srand(time(NULL));   // Inicializa semilla aleatoria (una sola vez al inicio)
+    srand(time(NULL));   // Inicializa semilla aleatoria
+
+    //================Incializacion memCompartida==================
+    FILE *f = fopen("ipc.key", "a"); fclose(f); //Creo fichero para ocuparlo en la llave
+    //Se generan llaves para que los procesos compartan la memoria
+    key_t shm_key = ftok("ipc.key", 'S');
+    key_t sem_key = ftok("ipc.key", 'M');
+
     
     Jugador jugador;
     

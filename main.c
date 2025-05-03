@@ -128,7 +128,7 @@ Carta dar_carta(Carta mazo[], int *indice_mazo) {
 }
 
 int valor_mano(Jugador j) { //revisar puede que sea Jugador* j
-    int sum , ases = 0;
+    int sum = 0, ases = 0;
     
     for (int i = 0; i < j.num_cartas; i++) {
         Valor v = j.mano[i].valor;
@@ -144,7 +144,7 @@ int valor_mano(Jugador j) { //revisar puede que sea Jugador* j
             sum += (int)v;
         }
     }
-    
+
     // Si la suma da mayor a 21 y tengo ases, bajo su valor a 1
     while (ases > 0 && sum > 21) {
         sum -= 10;       //11->1
@@ -152,6 +152,24 @@ int valor_mano(Jugador j) { //revisar puede que sea Jugador* j
     }
     
     return sum;
+}
+
+void print_estado(Jugador j) {
+    if (j.id_Jugador == CRUPIER) {
+        printf("Crupier: ");
+        print_mano(j);
+    } else {
+        printf("Bot %d: ", j.id_Jugador);
+        print_mano(j);
+    }
+
+    if (valor_mano(j) > 21){
+        printf(" (pierde)\n");
+    } else {
+        printf("\n");
+    }
+    
+    return;
 }
 
 //devuelve un bool si el bot debe pedir
@@ -173,7 +191,6 @@ int main() {
     Jugador jugador;
     
     // Inicializar jugadores
-    jugador.num_cartas = 0;
     jugador.puntos = 0;
     jugador.gano_ronda = 0;
 
@@ -184,7 +201,8 @@ int main() {
     
     //=================Definicion de rondas======================
     int rondas;
-    printf("=== Bienvenido a Blackjack SO ===\n");
+    printf("\n===== Bienvenido a Blackjack SO =====\n\n");
+
     printf("¿Cuántas rondas quieres jugar? (mínimo 5): ");
     scanf("%d", &rondas);
     /*
@@ -224,14 +242,18 @@ int main() {
                     exit(0); //cuidado con los procesos zombi
                 } else if (comando == CMD_NUEVA_RONDA) {
                     //2 cartas iniciales
+                    jugador.num_cartas = 0;
                     Carta c;
                     for (int j = 0; j < 2; j++) {
                         read(rd, &c, sizeof(c));
                         jugador.mano[jugador.num_cartas] = c;
                         jugador.num_cartas++;
-                    } print_jugador(jugador);
+                    } 
+                    write(wr, &jugador, sizeof(jugador)); //manda el estado del jugador para que el padre lo imprima
 
                     //pedir más cartas segun estrategia 
+                    write(wr, &jugador, sizeof(jugador));
+                    
                     int pedir = pedir_carta(jugador);
                     write(wr, &pedir, sizeof(pedir));
                     while (pedir) {
@@ -239,9 +261,14 @@ int main() {
                         jugador.mano[jugador.num_cartas] = c;
                         jugador.num_cartas++;
 
+                        write(wr, &jugador, sizeof(jugador));
+
                         pedir = pedir_carta(jugador);
                         write(wr, &pedir, sizeof(pedir));
                     }
+                    //turno del crupier
+                    write(wr, &jugador, sizeof(jugador)); //manda el estado del jugador para que el padre lo imprima
+
                 } else if (comando == CMD_FIN_RONDA) {
                     //mandar puntos
                     //recibir puntaje
@@ -253,10 +280,16 @@ int main() {
         close(from_child[i][1]);        //cierro PIPE para que padre no escriba 
     }
     //=======================Rondas=================================
+    //esto lo maneja el padre
+    Jugador bots; //para que las salidas por consola queden formateadas
+
     for (int ronda_actual = 1; ronda_actual <= rondas; ronda_actual++) {
-        printf("\n=== Ronda %d ===\n", ronda_actual);
+        printf("\n========== Ronda %d ==========\n\n", ronda_actual);
         barajar_deck(mazo);
         idx_mazo = 0;
+        jugador.num_cartas = 0;
+        printf("Barajando mazo...\n");
+        printf("Reaprtiendo cartas...\n\n");
         //avisa a todos que se empezo una nueva ronda
         for (int i = 0; i < NUM_JUGADORES; i++) {
             int comando = CMD_NUEVA_RONDA;
@@ -272,27 +305,54 @@ int main() {
         // Repartir 2 cartas al crupier --> a si mismo
         for (int j = 0; j < 2; j++) {
             Carta c = dar_carta(mazo, &idx_mazo);
-            jugador.mano[jugador.num_cartas++] = c;
+            jugador.mano[jugador.num_cartas] = c;
+            jugador.num_cartas++;
         }
-        print_crupierInit(jugador);
+        //imprime bots
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            read(from_child[i][0], &bots, sizeof(Jugador));
+            print_jugador(bots);
+        }
+        print_crupierInit(jugador); printf("\n");
         // Repartir cartas si piden
         for (int i = 0; i < NUM_JUGADORES; i++) {
+            read(from_child[i][0], &bots, sizeof(bots));
+
             int pide;
             read(from_child[i][0], &pide, sizeof(pide));
             while (pide) {
+                printf("Bot %d pide carta...\n", i+1);
                 Carta c = dar_carta(mazo, &idx_mazo);
                 write(to_child[i][1], &c, sizeof(c));
+
+                read(from_child[i][0], &bots, sizeof(bots));
+                print_jugador(bots);
+
                 read(from_child[i][0], &pide, sizeof(pide));
+            }
+            if (valor_mano(bots) > 21){
+                printf("Bot %d pierde\n", i+1);
+            } else{
+                printf("Bot %d decide plantarse\n", i+1);
             }
         }
         //Turno del Crupier
         int opcion = 0;
-        printf("=== Tu turno! ===\n");
-        //imprimir ambas cartas
-        printf("¿Qué quieres hacer?\n");
+        printf("\n--- Tu turno Crupier! ---\n\n");
+        
+        //imprime bots
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            read(from_child[i][0], &bots, sizeof(Jugador));
+            print_estado(bots);
+        }
+
+        print_jugador(jugador); printf("\n");
+
+        printf("\n¿Qué quieres hacer?\n");
         printf("(1) Agregar carta            (2) Plantarse\n");
         printf("Escoge una opción: ");
         scanf("%d", &opcion);
+
         /*
         while (opcion != 2) {
             //dar carta

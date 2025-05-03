@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/types.h>
-#include <sys/wait.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
 #include <time.h>
 
 #define TAM_DECK 52
@@ -31,6 +31,12 @@ typedef struct {
     int gano_ronda;      // 1 si gano la ronda, 0 si pierde
 } Jugador;
 
+typedef struct {
+    Carta mazo[TAM_DECK];
+    int idx_mazo;
+    Jugador jugadores[NUM_JUGADORES];
+    int comando[NUM_JUGADORES]; // el padre escribe comandos, hijos los lee
+} MemoriaCompartida;
 
 // Auxiliares para convertir a cadena
 const char *valor_str(Valor v) {

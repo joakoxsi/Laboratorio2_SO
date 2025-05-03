@@ -1,10 +1,11 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <time.h>
 
 #define TAM_DECK 52
-
+#define NUM_JUGADORES 5
+#define CRUPIER -1
 typedef enum { TREBOL, DIAMANTE, CORAZON, PICA } Palo;
 
 typedef enum { AS = 1, DOS, TRES, CUATRO, CINCO, SEIS,
@@ -16,18 +17,13 @@ typedef struct {
 } Carta;
 
 typedef struct {
+    int id_Jugador;      //Indica que jugador es
     Carta mano[12];      // Mano de cartas
     int num_cartas;      // Número de cartas en la mano
     int puntos;          // Puntos acumulados
     int gano_ronda;      // 1 si gano la ronda, 0 si pierde
 } Jugador;
 
-typedef struct {
-    Carta mano[12];      // Mano de cartas
-    int num_cartas;      // Número de cartas en la mano
-    int puntos;          // Puntos acumulados
-    int gano_ronda;      // 1 si gano la ronda, 0 si pierde
-} Crupier;
 
 // Auxiliares para convertir a cadena
 const char *valor_str(Valor v) {
@@ -81,20 +77,18 @@ void barajar_deck(Carta mazo[]) {
     }
 }
 
-void dar_carta(Jugador *j, Carta mazo[], int *indice_mazo) {
+Carta dar_carta(Carta mazo[], int *indice_mazo) {
     if (*indice_mazo >= TAM_DECK) {
         printf("No quedan más cartas en el mazo.\n");
         return;
     }
 
-    // Asignar la carta del mazo al jugador
-    j->mano[j->num_cartas] = mazo[*indice_mazo];
-    j->num_cartas++;
+    Carta carta = mazo[(*indice_mazo)];
     
     // Avanzar el índice del mazo
     (*indice_mazo)++;
 
-    return;
+    return carta;
 }
 
 int valor_mano(Jugador j) { //revisar puede que sea Jugador* j
@@ -167,8 +161,6 @@ int main() {
     srand(time(NULL));   // Inicializa semilla aleatoria (una sola vez al inicio)
     
     Jugador jugador;
-    Carta mazo[TAM_DECK];
-    int indice_mazo = 0;
     
     // Inicializar jugadores
     jugador.num_cartas = 0;
@@ -180,6 +172,11 @@ int main() {
     jugador.num_cartas = 0;
     jugador.puntos = 0;
     jugador.gano_ronda = 0;
+
+    //Inicializar mazo
+    Carta mazo[TAM_DECK];
+    init_deck(mazo);
+    int idx_mazo = 0;
     
     //=================Definicion de rondas======================
     int rondas;
@@ -191,12 +188,62 @@ int main() {
         printf("Se jugarán 5 rondas por defecto.\n");
         rondas = 5;
     }
-    //=====================Rondas=================================
+    //================Inicializacion de fork=======================
+    int from_child[NUM_JUGADORES][2];   //PIPE para hijo escriba, padre lee
+    int to_child[NUM_JUGADORES][2];     //PIPE para  padre escriba, hijo lee
+    pid_t pids[NUM_JUGADORES];
+
+    jugador.id_Jugador = CRUPIER; //Para el proceso padre
+    //=======================Rondas=================================
     int ronda_actual = 1;
     while (ronda_actual <= rondas) {
-        /*
-        barajar cartas
-        */
+        //======================fork===============================
+        for (int i = 1; i <= NUM_JUGADORES; i++) {
+            pids[i] = fork();
+
+            if (pids[i] < 0) {
+                perror("fork");
+                exit(1);
+            }
+            //=================Proceso hijo=======================
+            if (pids[i] == 0) {
+                jugador.id_Jugador = i;
+                //cerar PIPES para evitar errores
+                close(to_child[i][1]);    // hijo no escribe al “to_child”
+                close(from_child[i][0]);  // hijo no lee del “from_child”
+                
+                //definimos PIPES
+                int rd = to_child[i][0];        // lee del padre
+                int wr = from_child[i][1];      // escribe al padre
+                
+                //se reparten 2 cartas iniciales
+                for (int j = 0; j < 2; j++) {
+                    read(rd, &jugador.mano[jugador.num_cartas], sizeof(Carta));
+                    jugador.num_cartas++;
+                }
+
+                //se cierran los PIPES por seguridad
+                close(rd);
+                close(wr);
+                exit(0); //termina el hijo
+            }
+            //=================Proceso padre========================
+            //cerar PIPES para evitar errores
+            close(to_child[i][0]);              // padre no lee de “to_child”
+            close(from_child[i][1]);            // padre no escribe en “from_child”  
+
+            //definimos PIPES
+            int rd_padre = from_child[i][0];          // lee del hijo
+            int wr_padre = to_child[i][1];            // escribe al hijo
+            
+            barajar_deck(mazo); //el proceso padre maneja las cartas
+            
+            // Padre reparte dos cartas al jugador i
+            for (int j = 0; j < 2; j++) {
+                Carta carta = dar_carta(mazo, idx_mazo);  // generar carta desde el mazo
+                write(wr_padre, &carta, sizeof(Carta));
+            }
+       }
         /*
         entregar cartas a bots y crupier
         mostrar cartas de bots
@@ -214,7 +261,7 @@ int main() {
                      -> contar derrotas
                      -> dar puntos a crupier (1 si 51% derrotas, 2 si 100% derrotas, 0 etoc)
         */
-        
+        rondas++;
     }
     
     return 0;

@@ -28,7 +28,6 @@ typedef struct {
     Carta mano[12];      // Mano de cartas
     int num_cartas;      // Número de cartas en la mano
     int puntos;          // Puntos acumulados
-    int gano_ronda;      // 1 si gano la ronda, 0 si pierde
 } Jugador;
 
 
@@ -192,7 +191,6 @@ int main() {
     
     // Inicializar jugadores
     jugador.puntos = 0;
-    jugador.gano_ronda = 0;
 
     //Inicializar mazo
     Carta mazo[TAM_DECK];
@@ -271,7 +269,9 @@ int main() {
 
                 } else if (comando == CMD_FIN_RONDA) {
                     //mandar puntos
+                    write(wr, &jugador, sizeof(jugador));
                     //recibir puntaje
+                    read(rd, &jugador, sizeof(jugador));
                 } 
             }
         }
@@ -289,7 +289,7 @@ int main() {
         idx_mazo = 0;
         jugador.num_cartas = 0;
         printf("Barajando mazo...\n");
-        printf("Reaprtiendo cartas...\n\n");
+        printf("Repartiendo cartas...\n\n");
         //avisa a todos que se empezo una nueva ronda
         for (int i = 0; i < NUM_JUGADORES; i++) {
             int comando = CMD_NUEVA_RONDA;
@@ -346,18 +346,75 @@ int main() {
             print_estado(bots);
         }
 
-        print_jugador(jugador); printf("\n");
+        print_jugador(jugador);
 
-        printf("\n¿Qué quieres hacer?\n");
-        printf("(1) Agregar carta            (2) Plantarse\n");
-        printf("Escoge una opción: ");
-        scanf("%d", &opcion);
-
-        /*
-        while (opcion != 2) {
-            //dar carta
-        }*/
-        
+        int flag = 1;
+        while (flag) {
+            printf("\n¿Qué quieres hacer?\n");
+            printf("(1) Agregar carta            (2) Plantarse\n");
+            printf("Escoge una opción: ");
+            scanf("%d", &opcion);
+            if (opcion != 1 && opcion != 2){
+                printf("Opcion no valida\n");
+            }
+            //Agregar carta
+            if (opcion == 1) {
+                Carta c = dar_carta(mazo, &idx_mazo);
+                jugador.mano[jugador.num_cartas] = c;
+                jugador.num_cartas++;
+                printf("Crupier pide carta...\n");
+                print_jugador(jugador);
+            }
+            if (opcion == 2) {
+                flag = 0;
+                printf("Crupier decide plantarse\n");
+            }
+            //Si el crupier se pasa no puede seguir pidiendo cartas
+            if (valor_mano(jugador) > 21){
+                printf("Crupier pierde\n");
+                flag = 0;
+            }
+        }
+        //conteo de puntos
+        int puntaje_bot;
+        int puntaje_crupier = valor_mano(jugador) > 21 ? -1 : valor_mano(jugador); 
+        int victorias_crupier = 0;
+        printf("\n--- Resumen ronda %d ---\n", ronda_actual);
+        printf("\nEn esta ronda:\n");
+        //avisa a todos que termino la ronda
+        for (int i = 0; i < NUM_JUGADORES; i++) {
+            int comando = CMD_FIN_RONDA;
+            write(to_child[i][1], &comando, sizeof(comando));
+            read(from_child[i][0], &bots, sizeof(bots));
+            puntaje_bot = valor_mano(bots) > 21 ? -1 : valor_mano(bots); //ver lo de blackjack
+            //bot gana
+            if (puntaje_bot > puntaje_crupier) {
+                bots.puntos++;
+                printf("Bot %d gana\n", i + 1);
+            } else if (puntaje_bot == puntaje_crupier) {
+                //el bot tiene blackjack y el crupier tiene 21 con mas cartas -> bot gana
+                if (puntaje_bot == 21 && bots.num_cartas == 2 && jugador.num_cartas > 2) {
+                    bots.puntos++;
+                    printf("Bot %d gana\n", i + 1);
+                }
+                //crupier gana
+            } else if (puntaje_bot < puntaje_crupier) {
+                victorias_crupier++;
+                printf("Bot %d pierde\n", i + 1);
+            }
+            //manda puntaje al bot
+            write(to_child[i][1], &bots, sizeof(bots)); //revisar
+        }
+        //dar puntos a crupier (1 si 51% derrotas, 2 si 100% derrotas, 0 etoc)
+        if (victorias_crupier == 3) {
+            jugador.puntos++;
+            printf("\nComo Crupier gano a 3 bots, gana 1 punto\n");
+        } else if (victorias_crupier == 4) {
+            jugador.puntos += 2;
+            printf("\nComo Crupier gano a 4 bots, gana 2 puntos\n"); 
+        } else {
+            printf("\nComo Crupier gano a %d bots, gana 0 puntos\n", victorias_crupier);
+        }
     }
     //====================Termino del juego===============================
     for (int i = 0; i < NUM_JUGADORES; i++) {
